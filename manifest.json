@@ -1,0 +1,17 @@
+{
+  "background_color": "#ffffff",
+  "description": "Fix corrupted OpenWebUI chats",
+  "display": "standalone",
+  "icons": [
+    {
+      "purpose": "any",
+      "sizes": "144x144",
+      "src": "assets/favicon.svg",
+      "type": "image/svg+xml"
+    }
+  ],
+  "name": "Open WebUI Chat Fix",
+  "short_name": "Open WebUI Fix",
+  "start_url": "./index.html",
+  "theme_color": "#0066cc"
+}

@@ -1,55 +1,44 @@
-# 🚑 OpenWebUI Chat Repair 
+# Open WebUI Chat Repair
 
-**Rescue corrupted chat exports that get stuck on the "Loading..." spinner.**
+**Rescue Tool for Open WebUI chats that get stuck on the "Loading..." spinner.**
 
-![](./loading.png)
+![App Screenshot](./assets/screenshot.png)
 
-### 🔗 **[Launch the Repair Tool](https://fractuscontext.github.io/openwebui-chat-repair/)**
+🔗 [**Launch the Repair Tool**](https://fractuscontext.github.io/open-webui-chat-fix/)
 
 ---
 
-## 🧐 What is this?
+## What is this?
 
-If you use OpenWebUI, you may have encountered a bug where a specific chat refuses to open, displaying an infinite **"Loading..."** animation.
+If you use OpenWebUI, you may have encountered a bug where a specific chat refuses to open, displaying an infinite **"Loading..."** animation (or worse, hard-crashing back to the home page).
 
-This usually happens because the chat's internal data structure ("tree") has broken links—often due to network interruptions, API errors, or third-party tools. **This tool fixes the JSON structure so you can import your chat history back into OpenWebUI.**
+![Infinite Spinning](./assets/infinite_spinning.png)
 
-## ✨ Features
+This usually happens because the chat's internal data structure ("tree") has broken links — often due to network interruptions, API errors, or third-party tools. **This tool repairs the JSON structure so you can import your chat history back into OpenWebUI.**
 
-### 🛡️ Safe Repair (Default)
+Full usage instructions are built directly into the tool, just click **"Don't know how to use?"** on the page.
 
-* **Fixes the "Loading" Loop:** Reconnects detached messages to the main history.
-* **Restores Access:** Updates the file pointers so the chat opens immediately.
-* **Non-Destructive:** Keeps your *entire* history, including alternate generation branches.
+## Features
 
-### 🧹 Deep Clean (Optional)
+### Repair 🚑
 
-* **Prune Mode:** If you check "Prune Unused Branches," the tool will remove all alternate timeline branches, keeping only the single active conversation path.
-* **Result:** A significantly smaller, cleaner file.
+- **Fixes the "Loading" Loop:** Reconnects detached messages to the main history.
+- **Restores Access:** Updates the file pointers so the chat opens immediately.
+- **Non-Destructive:** Keeps your *entire* history, including alternate generation branches.
 
-## 🚀 How to Use
+### Cleaning 🧹
 
-1. **Export the broken chat** from OpenWebUI (`...` menu → **Export** → **JSON**).
-2. Open the **[Repair Tool](https://fractuscontext.github.io/openwebui-chat-repair/)**.
-3. **Drag & Drop** your JSON file into the box.
-4. **Download** the repaired file (`_repaired.json`).
-5. In OpenWebUI, go to **Settings** → **General** → **Import Chats** and select the fixed file.
-6. *Optional:* Once you confirm the fixed chat works, delete the old corrupted version.
+- **Prune Mode:** Removes unused regenerated responses (alternate branches), keeping only the active conversation path.
 
-## 🔒 Privacy & Security
+## Technical Context
 
-**Your data never leaves your device.**
+This tool resolves `currentId` pointers that reference non-existent nodes, prunes `childrenIds` arrays of invalid/dangling IDs, and (in Deep Clean mode) rebuilds the tree along a single linear path from root to the most recently timestamped leaf.
 
-* This tool runs entirely in your web browser (Client-Side JavaScript).
-* No chat data is uploaded to any server.
-* No tracking or analytics are used.
+- **Relevant GitHub Issues:** [#15189](https://github.com/open-webui/open-webui/issues/15189), [#19225](https://github.com/open-webui/open-webui/issues/19225)
+- **Upstream Discussion:** [View Comment](https://github.com/open-webui/open-webui/issues/19225#issuecomment-3584231544)
+- **Stack:** Pure vanilla JS. No NPM, no frameworks, no build step.
 
-## 🤓 Technical Context
-
-For developers or curious users, this tool resolves `currentId` pointers that reference non-existent nodes and prunes children arrays of invalid IDs.
-
-* **Relevant GitHub Issues:** [#15189](https://github.com/open-webui/open-webui/issues/15189), [#19225](https://github.com/open-webui/open-webui/issues/19225)
-* **Upstream Discussion:** [View Comment](https://github.com/open-webui/open-webui/issues/19225#issuecomment-3584231544)
+- **Test it yourself:** Import [`tests/bad-test-1.json`](./tests/bad-test-1.json) into OpenWebUI to reproduce the crash, then run it through the tool and re-import to confirm the fix.
 
 ---
 
