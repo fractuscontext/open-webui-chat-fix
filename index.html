@@ -16,10 +16,14 @@
         <div class="header">
             <span class="icon">🙀</span>
             <div>
-                <h1>OpenWebUI Chat Fix (and Cleaner!)</h1>
-                <p class="tagline">Saves your OpenWebUI chat from spinning indefinitely</p>
+                <h1>OpenWebUI Chat Fix & Cleaner</h1>
+                <p class="tagline">Fix infinite loading spinners, repair corrupted pointers & clean branches</p>
             </div>
         </div>
+
+        <p class="description">
+            100% private & client-side. Supports both single chat exports and full chat archive exports.
+        </p>
 
         <img src="./assets/infinite_spinning.png" alt="OpenWebUI Loading Spinner Issue" width="2096" height="996"
             style="max-width: 100%; height: auto; border-radius: 8px; border: 1px solid #ddd; display: block;">
@@ -28,13 +32,11 @@
             <summary>Don't know how to use?</summary>
             <div class="instructions-content">
                 <ol>
-                    <li>Open the broken chat &rarr; <code>...</code> menu &rarr; <strong>Export</strong>
-                        &rarr; <strong>JSON</strong>.</li>
+                    <li><strong>Single Chat:</strong> Open chat &rarr; <code>...</code> menu &rarr; <strong>Export</strong> &rarr; <strong>JSON</strong>.<br>
+                        <em>or</em> <strong>All Chats:</strong> Settings &rarr; Chats/Data &rarr; <strong>Export Chats</strong>.</li>
                     <li>Drop the exported file into the zone below.</li>
                     <li>Click repair to download the fixed JSON.</li>
-                    <li>In OpenWebUI, go to <strong>Settings</strong> &rarr; <strong>General</strong> &rarr;
-                        <strong>Import Chats</strong> &rarr; select the fixed file.
-                    </li>
+                    <li>In OpenWebUI, go to <strong>Settings</strong> &rarr; <strong>General</strong> &rarr; <strong>Import Chats</strong> &rarr; select the fixed file.</li>
                     <li>Confirm it loads successfully, then delete the broken original.</li>
                 </ol>
                 <a href="./assets/instructions.gif" target="_blank" rel="noopener noreferrer" class="gif-wrap">
@@ -53,12 +55,11 @@
         <div class="options">
             <label>
                 <input type="checkbox" id="pruneMode">
-                <small><strong>Deep Clean:</strong> Remove unused regenerated responses (alternate branches) to make the
-                    file smaller.</small>
+                <small><strong>Deep Clean:</strong> Flatten into a single thread by removing alternate/regenerated branches. <em>(Leave unchecked to preserve all branches)</em></small>
             </label>
         </div>
 
-        <button id="actionBtn" disabled autocomplete="off">Upload JSON to Begin</button>
+        <button id="actionBtn" type="button" disabled autocomplete="off">Upload JSON to Begin</button>
 
         <div id="status" hidden></div>
         <div id="stats" class="stats" hidden></div>

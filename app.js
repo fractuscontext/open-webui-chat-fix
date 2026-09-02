@@ -1,20 +1,25 @@
 /**
- * @typedef {Object} ChatMessage
- * @property {string} [id]
- * @property {string|null} [parentId]
- * @property {string[]} [childrenIds]
- * @property {number} [timestamp]
- *
- * @typedef {Object} ChatHistory
- * @property {string} currentId
- * @property {Record<string, ChatMessage>} messages
- *
- * @typedef {Object} ChatItem
- * @property {Object} chat
- * @property {string} [chat.title]
- * @property {ChatHistory} [chat.history]
- * @property {ChatMessage[]} [chat.messages]
- */
+* @typedef {Object} ChatMessage
+* @property {string} [id]
+* @property {string|null} [parentId]
+* @property {string[]} [childrenIds]
+* @property {number} [timestamp]
+* @property {string} [role]
+* @property {any} [content]
+* @property {any[]} [files]
+* @property {any[]} [output]
+* @property {string} [text]
+*
+* @typedef {Object} ChatHistory
+* @property {string} currentId
+* @property {Record<string, ChatMessage>} messages
+*
+* @typedef {Object} ChatItem
+* @property {Object} chat
+* @property {string} [chat.title]
+* @property {ChatHistory} [chat.history]
+* @property {ChatMessage[]} [chat.messages]
+*/
 
 const UI = {
     dropZone: document.getElementById('dropZone'),
@@ -58,7 +63,7 @@ UI.actionBtn.addEventListener('click', () => {
     UI.actionBtn.disabled = true;
 
     try {
-        const isPruneMode = UI.pruneMode.checked;
+        const isPruneMode = UI.pruneMode ? UI.pruneMode.checked : false;
         const { cleanedData, logs } = processAllChats(appState.parsedData, isPruneMode);
 
         UI.statsDiv.innerHTML = logs.join('');
@@ -66,7 +71,7 @@ UI.actionBtn.addEventListener('click', () => {
         showStatus('Processing Complete! Downloading...', 'status-success');
 
         const suffix = isPruneMode ? '_clean.json' : '_repaired.json';
-        downloadFile(cleanedData, appState.fileName.replace('.json', suffix));
+        downloadFile(cleanedData, appState.fileName.replace(/\.json$/i, '') + suffix);
     } catch (err) {
         console.error(err);
         showStatus('An error occurred during processing.', 'status-error');
@@ -101,9 +106,116 @@ function handleFile(file) {
 
 function processAllChats(data, pruneMode) {
     const logs = [];
-    const inputData = Array.isArray(data) ? data : [data];
+    const isArray = Array.isArray(data);
+    const inputData = isArray ? data : [data];
     const cleanedData = inputData.map((item, index) => processSingleChat(item, pruneMode, index, logs));
-    return { cleanedData, logs };
+    return { cleanedData: isArray ? cleanedData : cleanedData[0], logs };
+}
+
+/**
+* Extracts plain text content from various message schema variations
+*/
+function extractMessageText(msg) {
+    if (!msg) return '';
+    if (typeof msg.content === 'string') return msg.content;
+    if (Array.isArray(msg.content)) {
+        return msg.content
+            .map(part => (typeof part === 'string' ? part : part?.text || ''))
+            .join('\n');
+    }
+    if (Array.isArray(msg.output)) {
+        const textParts = [];
+        for (const out of msg.output) {
+            if (out?.content && Array.isArray(out.content)) {
+                for (const c of out.content) {
+                    if (c?.text) textParts.push(c.text);
+                }
+            }
+        }
+        if (textParts.length > 0) return textParts.join('\n');
+    }
+    return typeof msg.text === 'string' ? msg.text : '';
+}
+
+/**
+* Enforces strict User -> Assistant alternation:
+* - Consecutive User messages: Keep the LAST message
+* - Consecutive Assistant messages: Keep the FIRST message
+*/
+function enforceAlternatingRoles(linearMessages) {
+    // 1. Filter out completely empty ghost nodes (no text & no attachments)
+    const validMessages = [];
+    for (const msg of linearMessages) {
+        const text = extractMessageText(msg).trim();
+        const hasFiles = Array.isArray(msg.files) && msg.files.length > 0;
+        if (text || hasFiles) {
+            const role = (msg.role === 'assistant' || msg.role === 'model') ? 'assistant' : 'user';
+            validMessages.push({ ...msg, role });
+        }
+    }
+
+    if (validMessages.length === 0) return [];
+
+    // 2. Group consecutive messages by role
+    const groups = [];
+    let currentGroup = [validMessages[0]];
+
+    for (let i = 1; i < validMessages.length; i++) {
+        const msg = validMessages[i];
+        if (msg.role === currentGroup[0].role) {
+            currentGroup.push(msg);
+        } else {
+            groups.push(currentGroup);
+            currentGroup = [msg];
+        }
+    }
+    groups.push(currentGroup);
+
+    // 3. Apply selection rules:
+    //    - 'user' group: pick the LAST message
+    //    - 'assistant' group: pick the FIRST message
+    const alternating = [];
+    for (const group of groups) {
+        if (group[0].role === 'user') {
+            alternating.push(group[group.length - 1]);
+        } else {
+            alternating.push(group[0]);
+        }
+    }
+
+    // 4. Ensure the conversation starts with 'user'
+    while (alternating.length > 0 && alternating[0].role !== 'user') {
+        alternating.shift();
+    }
+
+    return alternating;
+}
+
+/**
+* Reconstructs clean linear tree pointers (parentId / childrenIds)
+*/
+function rebuildTreeFromLinear(linearMessages) {
+    const messagesObj = {};
+
+    for (let i = 0; i < linearMessages.length; i++) {
+        const current = { ...linearMessages[i] };
+        if (!current.id) {
+            current.id = (typeof crypto !== 'undefined' && crypto.randomUUID)
+                ? crypto.randomUUID()
+                : 'msg_' + Math.random().toString(36).substring(2, 9);
+        }
+
+        const prevId = i > 0 ? linearMessages[i - 1].id : null;
+        const nextId = i < linearMessages.length - 1 ? linearMessages[i + 1].id : null;
+
+        current.parentId = prevId;
+        current.childrenIds = nextId ? [nextId] : [];
+
+        messagesObj[current.id] = current;
+    }
+
+    const currentId = linearMessages.length > 0 ? linearMessages[linearMessages.length - 1].id : null;
+    return { messagesObj, currentId };
 }
 
 function processSingleChat(item, pruneMode, index, globalLogs) {
@@ -114,36 +226,65 @@ function processSingleChat(item, pruneMode, index, globalLogs) {
 
     const chatTitle = item.chat.title || `Untitled Chat ${index + 1}`;
     const history = item.chat.history;
-
-    // Modern deep clone
     let workingMessages = structuredClone(history.messages);
     const logDetails = [];
 
+    // 1. Sanitize graph links (fixes broken/missing parent-child pointers)
     const sanitizeResult = sanitizeGraph(workingMessages);
-    if (sanitizeResult.brokenLinks > 0) logDetails.push(`Fixed ${sanitizeResult.brokenLinks} links`);
-
-    const bestId = findBestCurrentId(history.currentId, workingMessages);
-    let pointerFixed = (bestId !== history.currentId || !workingMessages[history.currentId]);
-    if (pointerFixed) logDetails.push(`Restored pointer`);
-
-    if (pruneMode) {
-        const pruneResult = pruneUnusedBranches(workingMessages, bestId);
-        workingMessages = pruneResult.messages;
-        if (pruneResult.removedCount > 0) logDetails.push(`Pruned ${pruneResult.removedCount} nodes`);
+    if (sanitizeResult.brokenLinks > 0) {
+        logDetails.push(`Fixed ${sanitizeResult.brokenLinks} broken links`);
     }
 
-    const linearHistory = buildLinearHistory(workingMessages, bestId);
+    // 2. Trace the active leaf node
+    const bestId = findBestCurrentId(history.currentId, workingMessages);
+    if (bestId !== history.currentId) {
+        logDetails.push(`Restored active thread pointer`);
+    }
 
-    let badges = [
-        pointerFixed && `<span class="badge">Repaired</span>`,
-        pruneMode && `<span class="badge">Pruned</span>`,
-        sanitizeResult.brokenLinks > 0 && `<span class="badge">Sanitized</span>`
-    ].filter(Boolean).join('');
+    // 3. Extract the active linear branch path from leaf back to root
+    const rawLinear = [];
+    let p = bestId;
+    while (p && workingMessages[p]) {
+        rawLinear.unshift(workingMessages[p]);
+        p = workingMessages[p].parentId;
+    }
+
+    // 4. Enforce strict alternation & filter ghost nodes on active path
+    const alternatingLinear = enforceAlternatingRoles(rawLinear);
+    const removedCount = rawLinear.length - alternatingLinear.length;
+    if (removedCount > 0) {
+        logDetails.push(`Cleaned ${removedCount} redundant/ghost turns`);
+    }
+
+    let finalMessagesObj;
+    let finalCurrentId;
+
+    // 5. Apply branch handling based on pruneMode
+    if (pruneMode) {
+        // Flatten the tree: discard alternate branches, keep ONLY the active path
+        const rebuilt = rebuildTreeFromLinear(alternatingLinear);
+        finalMessagesObj = rebuilt.messagesObj;
+        finalCurrentId = rebuilt.currentId;
+        const totalNodes = Object.keys(workingMessages).length;
+        const keptNodes = Object.keys(finalMessagesObj).length;
+        if (totalNodes > keptNodes) {
+            logDetails.push(`Pruned ${totalNodes - keptNodes} branch nodes`);
+        }
+    } else {
+        // Preserve tree: keep all alternate branches, forks, and history
+        finalMessagesObj = workingMessages;
+        finalCurrentId = bestId;
+    }
+
+    const badges = [
+        pruneMode ? '<span class="badge">Flattened / Pruned</span>' : '<span class="badge">Branches Preserved</span>',
+        sanitizeResult.brokenLinks > 0 ? '<span class="badge">Sanitized</span>' : ''
+    ].filter(Boolean).join(' ');
 
     globalLogs.push(`
         <div class="log-entry">
-            <strong>${escapeHtml(chatTitle)}</strong> ${badges || '<span class="badge">Healthy</span>'}
-            <div style="color: #666; font-size: 0.8rem;">${logDetails.join(', ') || 'No issues found'}</div>
+            <strong>${escapeHtml(chatTitle)}</strong> ${badges}
+            <div style="color: #666; font-size: 0.8rem;">${logDetails.join(', ') || 'Clean'}</div>
         </div>
     `);
 
@@ -151,33 +292,37 @@ function processSingleChat(item, pruneMode, index, globalLogs) {
         ...item,
         chat: {
             ...item.chat,
-            messages: linearHistory,
-            history: { ...history, currentId: bestId, messages: workingMessages }
+            messages: alternatingLinear, // Linear alternating sequence for API / direct list view
+            history: {
+                ...history,
+                currentId: finalCurrentId,
+                messages: finalMessagesObj // Full tree (pruneMode=false) or linear tree (pruneMode=true)
+            }
         }
     };
 }
 
 /**
- * @param {string} rootId
- * @param {Record<string, ChatMessage>} messages
- * @param {function(string, ChatMessage): void} [visitorFn]
- * @returns {Set<string>}
- */
+* @param {string} rootId
+* @param {Record<string, ChatMessage>} messages
+* @param {function(string, ChatMessage, number): void} [visitorFn]
+* @returns {Set<string>}
+*/
 function traverseGraph(rootId, messages, visitorFn) {
-    const queue = [rootId];
+    const queue = [{ id: rootId, depth: 0 }];
     const visited = new Set([rootId]);
     let head = 0;
 
     while (head < queue.length && head < 50000) {
-        const currentId = queue[head++];
+        const { id: currentId, depth } = queue[head++];
         const node = messages[currentId];
 
-        if (visitorFn) visitorFn(currentId, node);
+        if (visitorFn) visitorFn(currentId, node, depth);
 
         for (const childId of (node?.childrenIds || [])) {
             if (!visited.has(childId) && messages[childId]) {
                 visited.add(childId);
-                queue.push(childId);
+                queue.push({ id: childId, depth: depth + 1 });
             }
         }
     }
@@ -201,9 +346,16 @@ function sanitizeGraph(messages) {
 }
 
 function findBestCurrentId(currentId, messages) {
-    const roots = Object.keys(messages).filter(id => !messages[id].parentId);
-    if (roots.length === 0) return currentId;
+    // 1. If existing currentId is valid and exists, prioritize it
+    if (currentId && messages[currentId]) return currentId;
 
+    const roots = Object.keys(messages).filter(id => !messages[id].parentId);
+    if (roots.length === 0) {
+        const keys = Object.keys(messages);
+        return keys.length > 0 ? keys[0] : null;
+    }
+
+    // 2. Find the largest connected component
     let bestRoot = roots[0];
     let maxBranchSize = -1;
 
@@ -215,12 +367,18 @@ function findBestCurrentId(currentId, messages) {
         }
     });
 
+    // 3. Find the best leaf node (latest timestamp or deepest leaf node)
     let bestLeaf = bestRoot;
-    let latestTimestamp = -1;
+    let maxTimestamp = -1;
+    let maxDepth = -1;
 
-    traverseGraph(bestRoot, messages, (id, node) => {
-        if (node.timestamp > latestTimestamp) {
-            latestTimestamp = node.timestamp;
+    traverseGraph(bestRoot, messages, (id, node, depth) => {
+        const ts = typeof node?.timestamp === 'number' ? node.timestamp : -1;
+        if (ts > maxTimestamp) {
+            maxTimestamp = ts;
+            bestLeaf = id;
+        } else if (maxTimestamp === -1 && depth > maxDepth) {
+            maxDepth = depth;
             bestLeaf = id;
         }
     });
@@ -228,42 +386,14 @@ function findBestCurrentId(currentId, messages) {
     return bestLeaf;
 }
 
-function pruneUnusedBranches(messages, leafId) {
-    const kept = new Set();
-    let p = leafId;
-    while (p && messages[p]) {
-        kept.add(p);
-        p = messages[p].parentId;
-    }
-
-    const clean = {};
-    kept.forEach(id => {
-        const m = { ...messages[id] };
-        if (m.childrenIds) m.childrenIds = m.childrenIds.filter(cid => kept.has(cid));
-        clean[id] = m;
-    });
-
-    return { messages: clean, removedCount: Object.keys(messages).length - kept.size };
-}
-
-function buildLinearHistory(messages, leafId) {
-    const history = [];
-    let p = leafId;
-    while (p && messages[p]) {
-        history.unshift(messages[p]);
-        p = messages[p].parentId;
-    }
-    return history;
-}
-
 function downloadFile(data, filename) {
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = Object.assign(document.createElement('a'), { href: url, download: filename });
     document.body.appendChild(a);
     a.click();
     a.remove();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function showStatus(msg, type) {
@@ -273,5 +403,5 @@ function showStatus(msg, type) {
 }
 
 function escapeHtml(text) {
-    return text?.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[m])) || text;
+    return String(text ?? '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": "&#39;" }[m]));
 }
